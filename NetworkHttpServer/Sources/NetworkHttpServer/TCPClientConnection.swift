@@ -10,17 +10,22 @@ import Network
 
 @available(macOS 10.14, *)
 public class TCPClientConnection {
+    //Read only vars
     let currentConnection: NWConnection
-    let MTU = 65536
+    let MTU: Int = 65536
     let id: Int
     
+    private var markedCancel: Bool = false
+    
+    //Static vars
     private static var nextId = -1
+    
+    //Delegating Handlers
     var didStopCallback: ((Error?) -> Void)? = nil
     var didReceiveFrom: ((_ client: TCPClientConnection, _ data: Data?) -> Void)? = nil
     var didFail: ((_ client: TCPClientConnection, _ error: Error) -> Void)? = nil
     var didConnectionEnd: ((_ client: TCPClientConnection) -> Void)? = nil
     var didSendCompleted: ((_ client: TCPClientConnection, _ data: Data) -> Void)? = nil
-    
     
     public init(nwConnection: NWConnection) {
         self.currentConnection = nwConnection
@@ -40,6 +45,7 @@ public class TCPClientConnection {
     }
     
     func stop() {
+        self.markedCancel = true
         self.currentConnection.cancel()
         print("connection \(self.id) will stop")
     }
@@ -47,14 +53,18 @@ public class TCPClientConnection {
     private func setup() {
         self.currentConnection.receive(minimumIncompleteLength: 1, maximumLength: MTU) {
             (data, _, isComplete, error) in
+            
             if let didReceiveFrom = self.didReceiveFrom {
                 didReceiveFrom(self, data)
             }
+            
             if isComplete {
                 self.connectionDidEnd()
             } else if let error = error {
-                print("receiving error from connection")
-                self.connectionDidFail(error: error)
+                if !self.markedCancel {
+                    print("receiving error from connection")
+                    self.connectionDidFail(error: error)
+                }
             } else {
                 self.setup()
             }
@@ -78,6 +88,7 @@ public class TCPClientConnection {
     }
     
     func send(data: Data) {
+        print("Connection \(self.id) called send data")
         self.currentConnection.send(content: data, completion: .contentProcessed { error in
             if let error = error {
                 print("Was sent, but error occurred")
@@ -86,9 +97,9 @@ public class TCPClientConnection {
             }
             
             if let didSendCompleted = self.didSendCompleted {
+                print("Connection \(self.id) finished send data")
                 didSendCompleted(self, data)
             }
-            print("connection \(self.id) did send, data: \(data as NSData)")
         })
     }
     
